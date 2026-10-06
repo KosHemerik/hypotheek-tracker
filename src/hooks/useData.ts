@@ -10,7 +10,7 @@ export function useData() {
 
 /** Eén hypotheek met de bijbehorende rentewijzigingen en betalingen. */
 export function useMortgage(id: UUID | undefined) {
-  const { mortgages, rates, payments, status } = useData()
+  const { mortgages, rates, payments, documents, status } = useData()
   return useMemo(() => {
     const mortgage = mortgages.find((m) => m.id === id) ?? null
     return {
@@ -18,6 +18,7 @@ export function useMortgage(id: UUID | undefined) {
       mortgage,
       rates: rates.filter((r) => r.mortgageId === id),
       payments: payments.filter((p) => p.mortgageId === id),
+      documents: documents.filter((d) => d.mortgageId === id),
     }
-  }, [mortgages, rates, payments, status, id])
+  }, [mortgages, rates, payments, documents, status, id])
 }

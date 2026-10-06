@@ -8,9 +8,12 @@ import {
   type ReactNode,
 } from 'react'
 import type {
+  DocumentCategory,
+  DocumentMetaInput,
   InterestRatePeriod,
   InterestRatePeriodInput,
   Mortgage,
+  MortgageDocument,
   MortgageInput,
   NewMortgageInput,
   Payment,
@@ -40,6 +43,7 @@ export interface DataState {
   mortgages: Mortgage[]
   rates: InterestRatePeriod[]
   payments: Payment[]
+  documents: MortgageDocument[]
   /** Id's van hypotheken die voorbeelddata zijn. */
   sampleIds: UUID[]
 }
@@ -54,6 +58,18 @@ export interface DataActions {
   createPayment(input: PaymentInput): Promise<void>
   updatePayment(id: UUID, input: PaymentInput): Promise<void>
   deletePayment(id: UUID): Promise<void>
+  /**
+   * Uploadt bestanden één voor één. Mislukte uploads stoppen de rest niet;
+   * hun meldingen komen terug in `failed`.
+   */
+  uploadDocuments(
+    mortgageId: UUID,
+    files: File[],
+    meta: { category: (file: File) => DocumentCategory; description: string | null },
+  ): Promise<{ uploaded: number; failed: string[] }>
+  updateDocument(id: UUID, input: DocumentMetaInput): Promise<void>
+  deleteDocument(id: UUID): Promise<void>
+  getDocumentFile(id: UUID): Promise<Blob>
   loadSampleData(): Promise<void>
   clearSampleData(): Promise<void>
 }
@@ -69,6 +85,7 @@ const initialState: DataState = {
   mortgages: [],
   rates: [],
   payments: [],
+  documents: [],
   sampleIds: [],
 }
 
@@ -84,10 +101,11 @@ export function DataProvider({
 
   const reload = useCallback(async () => {
     try {
-      const [mortgages, rates, payments] = await Promise.all([
+      const [mortgages, rates, payments, documents] = await Promise.all([
         repository.listMortgages(),
         repository.listRates(),
         repository.listPayments(),
+        repository.listDocuments(),
       ])
       const existing = new Set(mortgages.map((m) => m.id))
       setState({
@@ -96,6 +114,7 @@ export function DataProvider({
         mortgages,
         rates,
         payments,
+        documents,
         sampleIds: getSeedMortgageIds().filter((id) => existing.has(id)),
       })
     } catch (error) {
@@ -161,6 +180,29 @@ export function DataProvider({
       updatePayment: (id, input) =>
         mutate(() => repository.updatePayment(id, input).then(() => undefined)),
       deletePayment: (id) => mutate(() => repository.deletePayment(id)),
+      uploadDocuments: (mortgageId, files, meta) =>
+        mutate(async () => {
+          const failed: string[] = []
+          let uploaded = 0
+          for (const file of files) {
+            try {
+              await repository.uploadDocument({
+                mortgageId,
+                file,
+                category: meta.category(file),
+                description: meta.description,
+              })
+              uploaded++
+            } catch (error) {
+              failed.push(`${file.name}: ${messageOf(error)}`)
+            }
+          }
+          return { uploaded, failed }
+        }),
+      updateDocument: (id, input) =>
+        mutate(() => repository.updateDocument(id, input).then(() => undefined)),
+      deleteDocument: (id) => mutate(() => repository.deleteDocument(id)),
+      getDocumentFile: (id) => repository.getDocumentFile(id),
       loadSampleData: () => mutate(() => loadSampleData(repository)),
       clearSampleData: () => mutate(() => clearSampleData(repository)),
     }),

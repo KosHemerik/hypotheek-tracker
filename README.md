@@ -24,7 +24,7 @@ Bij de eerste start wordt er automatisch voorbeelddata geladen: twee leningdelen
 | `npm run typecheck`               | Alleen TypeScript controleren          |
 | `npm run lint` / `npm run format` | ESLint / Prettier                      |
 
-De data staat voorlopig in `localStorage` van je browser. Een andere browser of een gewiste browseropslag betekent dus lege data.
+De data staat voorlopig in je browser: gegevens in `localStorage`, geüploade documenten in IndexedDB (localStorage is te klein voor bestanden). Een andere browser of een gewiste browseropslag betekent dus lege data.
 
 ## Opbouw
 
@@ -32,6 +32,7 @@ De data staat voorlopig in `localStorage` van je browser. Een andere browser of 
 src/
   domain/      types.ts (camelCase, app) · db-types.ts (snake_case, database) · mappers.ts
   data/        MortgageRepository.ts (interface) · LocalStorage… · Supabase… · createRepository.ts
+               fileStore.ts (bestanden in IndexedDB)
                DataContext.tsx (state + mutaties) · seed.ts (voorbeelddata)
   lib/         calculations.ts · validation.ts · period.ts · money.ts · dates.ts · format.ts (+ tests)
   components/  ui/ · charts/ · mortgage/ · payments/ · rates/ · PeriodFilter · YearOverview
@@ -54,6 +55,7 @@ supabase/migrations/   SQL-schema
 - **Openstaand bij een periodefilter:** het saldo aan het eind van de periode, of vandaag als de periode tot nu loopt. Betaalde rente en aflossing gelden voor de gekozen periode, met het totaal eronder.
 - **Theoretische rente:** het openstaande bedrag aan het begin van de maand × het geldende percentage / 12. Dit is een indicatie. In de grafiek staat die als lijn naast de werkelijk betaalde rente.
 - **Maximale aflossing:** een aflossing mag het saldo nooit onder € 0 brengen, ook niet als je een betaling achteraf invoegt of bewerkt. De foutmelding noemt het maximaal mogelijke bedrag.
+- **Documenten:** op de detailpagina kun je bestanden uploaden door ze te slepen of te kiezen (max. 20 MB per bestand, 10 per keer). De categorie (offerte, akte, taxatierapport, jaaroverzicht, rentewijziging, overig) wordt geraden uit de bestandsnaam en is aan te passen. PDF's en afbeeldingen openen in een nieuw tabblad; andere bestanden worden gedownload. Verwijder je een hypotheek, dan gaan de documenten mee.
 
 ## Supabase koppelen
 
@@ -62,7 +64,7 @@ Alles is al voorbereid: `SupabaseMortgageRepository` implementeert dezelfde inte
 ### 1. Project en schema
 
 1. Maak een project aan op [supabase.com](https://supabase.com).
-2. Voer `supabase/migrations/20261006000000_init.sql` uit in de **SQL Editor**. Met de CLI kan het ook: `supabase link` en daarna `supabase db push`.
+2. Voer de migraties in `supabase/migrations/` op volgorde uit in de **SQL Editor**: eerst `…_init.sql`, dan `…_documents.sql`. De tweede maakt ook de private Storage-bucket `mortgage-documents` aan, met policies. Met de CLI kan het ook: `supabase link` en daarna `supabase db push`.
 
 ### 2. Omgevingsvariabelen
 
@@ -92,6 +94,7 @@ Na het inloggen kun je eenmalig alles overzetten. Lees de rijen via `new LocalSt
 | `mortgages`             | `id uuid pk`, `user_id → auth.users`, `name`, `mortgage_number`, `principal_cents bigint`, `start_date`, `end_date`, `notes`, `created_at`, `updated_at`    |
 | `interest_rate_periods` | `id`, `user_id`, `mortgage_id → mortgages on delete cascade`, `rate_percentage numeric(6,3)`, `effective_date`; uniek per (`mortgage_id`, `effective_date`) |
 | `payments`              | `id`, `user_id`, `mortgage_id → mortgages on delete cascade`, `payment_date`, `interest_cents`, `principal_cents`, `description`                            |
+| `mortgage_documents`    | `id`, `user_id`, `mortgage_id → mortgages on delete cascade`, `file_name`, `mime_type`, `size_bytes`, `category`, `description`, `storage_path`             |
 
 Het schema bevat:
 
@@ -99,6 +102,8 @@ Het schema bevat:
 - **Indexes** op `mortgage_id` en `user_id`.
 - **Een trigger** die `updated_at` bijwerkt.
 - **RLS-policies per gebruiker voor select, insert, update en delete.** Bij rentewijzigingen en betalingen controleert de insert/update-policy ook dat de bijbehorende hypotheek van dezelfde gebruiker is.
+
+**Documenten:** de metadata staat in `mortgage_documents`, de bestanden zelf in de private Storage-bucket `mortgage-documents`. Het pad is `<user_id>/<mortgage_id>/<document_id>/<bestandsnaam>`. De Storage-policies controleren dat de eerste map je eigen user id is. Bestanden in Storage verdwijnen niet vanzelf mee met een `on delete cascade`. Daarom ruimt `SupabaseMortgageRepository.deleteMortgage` ze eerst zelf op. Maximaal 20 MB per bestand; dat wordt in de app, de tabel én de bucket afgedwongen.
 
 De vertaling tussen de database (snake_case, `rate_percentage` als decimaal) en de app (camelCase, centen, duizendsten procent) gebeurt in `src/domain/mappers.ts`.
 

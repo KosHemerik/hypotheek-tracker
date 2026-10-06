@@ -55,7 +55,11 @@ export function fileKind(mimeType: string, fileName: string): FileKind {
   if (mimeType === 'application/pdf' || ext === 'pdf') return 'pdf'
   if (mimeType.startsWith('image/')) return 'image'
   if (/sheet|excel|csv/.test(mimeType) || ['xls', 'xlsx', 'csv'].includes(ext)) return 'spreadsheet'
-  if (mimeType.startsWith('text/') || /word|document/.test(mimeType) || ['doc', 'docx', 'txt'].includes(ext)) {
+  if (
+    mimeType.startsWith('text/') ||
+    /word|document/.test(mimeType) ||
+    ['doc', 'docx', 'txt'].includes(ext)
+  ) {
     return 'text'
   }
   return 'other'
@@ -63,7 +67,9 @@ export function fileKind(mimeType: string, fileName: string): FileKind {
 
 /** Kan de browser dit bestand zelf tonen (in een nieuw tabblad)? */
 export function isPreviewable(mimeType: string): boolean {
-  return mimeType === 'application/pdf' || mimeType.startsWith('image/') || mimeType === 'text/plain'
+  return (
+    mimeType === 'application/pdf' || mimeType.startsWith('image/') || mimeType === 'text/plain'
+  )
 }
 
 export interface FileLike {

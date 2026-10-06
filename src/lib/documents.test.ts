@@ -40,7 +40,9 @@ describe('fileKind', () => {
     expect(fileKind('', 'a.PDF')).toBe('pdf')
     expect(fileKind('image/jpeg', 'a.jpg')).toBe('image')
     expect(fileKind('', 'a.xlsx')).toBe('spreadsheet')
-    expect(fileKind('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'a.docx')).toBe('text')
+    expect(
+      fileKind('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'a.docx'),
+    ).toBe('text')
     expect(fileKind('application/zip', 'a.zip')).toBe('other')
   })
 })

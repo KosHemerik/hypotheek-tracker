@@ -79,7 +79,10 @@ describe('LocalStorageMortgageRepository – documenten', () => {
       category: 'annual_statement',
       description: 'Voor de aangifte',
     })
-    expect(updated).toMatchObject({ fileName: 'Jaaroverzicht 2025.pdf', category: 'annual_statement' })
+    expect(updated).toMatchObject({
+      fileName: 'Jaaroverzicht 2025.pdf',
+      category: 'annual_statement',
+    })
     expect(updated.storagePath).toBe(doc.storagePath)
     expect(await (await repo.getDocumentFile(doc.id)).text()).toBe('x')
   })
@@ -88,7 +91,12 @@ describe('LocalStorageMortgageRepository – documenten', () => {
     const a = await createMortgage()
     const b = await createMortgage()
     const upload = (mortgageId: string, name: string) =>
-      repo.uploadDocument({ mortgageId, file: new File(['x'], name), category: 'other', description: null })
+      repo.uploadDocument({
+        mortgageId,
+        file: new File(['x'], name),
+        category: 'other',
+        description: null,
+      })
 
     const docA1 = await upload(a.id, 'a1.pdf')
     await upload(a.id, 'a2.pdf')
@@ -105,7 +113,12 @@ describe('LocalStorageMortgageRepository – documenten', () => {
 
   it('weigert uploads bij een onbekende hypotheek', async () => {
     await expect(
-      repo.uploadDocument({ mortgageId: 'bestaat-niet', file: new File(['x'], 'a.pdf'), category: 'other', description: null }),
+      repo.uploadDocument({
+        mortgageId: 'bestaat-niet',
+        file: new File(['x'], 'a.pdf'),
+        category: 'other',
+        description: null,
+      }),
     ).rejects.toThrow('Hypotheek niet gevonden.')
     expect(files.files.size).toBe(0)
   })

@@ -22,7 +22,9 @@ export class IndexedDbFileStore implements FileStore {
       request.onupgradeneeded = () => request.result.createObjectStore(STORE)
       request.onsuccess = () => resolve(request.result)
       request.onerror = () =>
-        reject(new RepositoryError('Bestandsopslag (IndexedDB) is niet beschikbaar.', request.error))
+        reject(
+          new RepositoryError('Bestandsopslag (IndexedDB) is niet beschikbaar.', request.error),
+        )
     })
     return this.db
   }

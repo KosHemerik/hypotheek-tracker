@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { BalanceChart } from '@/components/charts/BalanceChart'
 import { MonthlyChart } from '@/components/charts/MonthlyChart'
+import { DocumentsSection } from '@/components/documents/DocumentsSection'
 import { MortgageForm } from '@/components/mortgage/MortgageForm'
 import { PaymentForm } from '@/components/payments/PaymentForm'
 import { PaymentsTable } from '@/components/payments/PaymentsTable'
@@ -46,7 +47,7 @@ type Dialog =
 
 export function MortgageDetailPage() {
   const { id } = useParams()
-  const { mortgage, rates, payments } = useMortgage(id)
+  const { mortgage, rates, payments, documents } = useMortgage(id)
   const { deleteMortgage, deletePayment, deleteRate, sampleIds } = useData()
   const { period, setPeriod, range, today, search } = usePeriod()
   const navigate = useNavigate()
@@ -265,6 +266,8 @@ export function MortgageDetailPage() {
         </Section>
       </div>
 
+      <DocumentsSection mortgage={mortgage} documents={documents} />
+
       {mortgage.notes && (
         <Section title="Notities">
           <p className="text-sm whitespace-pre-line text-slate-600">{mortgage.notes}</p>
@@ -340,9 +343,11 @@ export function MortgageDetailPage() {
         message={
           <>
             <strong>{mortgage.name}</strong> wordt verwijderd, inclusief {payments.length}{' '}
-            {payments.length === 1 ? 'betaling' : 'betalingen'} en {rates.length}{' '}
-            {rates.length === 1 ? 'rentepercentage' : 'rentepercentages'}. Dit kan niet ongedaan
-            worden gemaakt.
+            {payments.length === 1 ? 'betaling' : 'betalingen'}, {rates.length}{' '}
+            {rates.length === 1 ? 'rentepercentage' : 'rentepercentages'}
+            {documents.length > 0 &&
+              ` en ${documents.length} ${documents.length === 1 ? 'document' : 'documenten'}`}
+            . Dit kan niet ongedaan worden gemaakt.
           </>
         }
         onConfirm={async () => {
