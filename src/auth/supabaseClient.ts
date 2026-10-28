@@ -20,7 +20,8 @@ export function getSupabase(): Promise<SupabaseClient> {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        // Alleen e-mail + wachtwoord; geen magic links of OAuth-redirects.
+        // Geen magic links of OAuth. Resetlinks handelen we zelf af (zie recovery.ts),
+        // zodat de app weet dat er eerst een nieuw wachtwoord gekozen moet worden.
         detectSessionInUrl: false,
       },
     }),

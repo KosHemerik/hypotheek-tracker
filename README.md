@@ -149,7 +149,25 @@ Ook als iemand toch een account zou hebben, ziet die door Row Level Security noo
 2. Vul je e-mailadres en een sterk wachtwoord in en vink **"Auto Confirm User"** aan. Dan hoef je geen bevestigingsmail te openen.
 3. Optioneel, onder **Authentication → Sign In / Providers → Email**: verhoog de minimale wachtwoordlengte en zet _leaked password protection_ aan.
 
-Wachtwoord vergeten? Stel een nieuw wachtwoord in via **Authentication → Users → (jouw account) → Send password recovery**, of verwijder de gebruiker en maak hem opnieuw aan. De `user_id` verandert dan wel, waardoor je bestaande data niet meer bij het nieuwe account hoort. Gebruik dus liever de recovery-optie.
+### Wachtwoord vergeten
+
+Op het inlogscherm staat **"Wachtwoord vergeten?"**. Je vult je e-mailadres in en krijgt een mail met een resetlink naar `/wachtwoord-herstellen`. Na het openen kies je een nieuw wachtwoord, en daarna ga je direct door naar de app. Supabase verklapt niet of een adres bestaat: de app meldt altijd dat de mail verstuurd is.
+
+Instellingen in Supabase (eenmalig):
+
+1. **Authentication → URL Configuration**
+   - _Site URL_: het adres van de app op Vercel, bijv. `https://<jouw-app>.vercel.app`.
+   - _Redirect URLs_: voeg `https://<jouw-app>.vercel.app/wachtwoord-herstellen` en `https://localhost:5173/wachtwoord-herstellen` toe. Staat een adres er niet bij, dan stuurt Supabase je naar de Site URL. Ook dat werkt, omdat de app de link op elk pad herkent.
+2. **Authentication → Emails → Reset Password** (aanbevolen): vervang de link in de template door
+   ```html
+   <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=recovery"
+     >Nieuw wachtwoord instellen</a
+   >
+   ```
+   De standaardlink (`{{ .ConfirmationURL }}`) werkt ook, maar wordt soms al "gebruikt" doordat een mailscanner de link opent. De link hierboven wordt pas ingewisseld als de app hem in je browser opent.
+3. **E-mail versturen:** de ingebouwde mailserver van Supabase stuurt maar een paar mails per uur, en alleen naar adressen van leden van je Supabase-organisatie. Voor één eigen account is dat genoeg. Wil je meer, stel dan eigen SMTP in onder **Authentication → Emails → SMTP Settings** (bijv. Resend of Postmark).
+
+Op Vercel zorgt [`vercel.json`](vercel.json) ervoor dat `/wachtwoord-herstellen` (en `/bank/callback`) bij de app uitkomen en geen 404 geven.
 
 ### 4. Omgevingsvariabelen
 
@@ -167,7 +185,7 @@ Vul daarin `VITE_SUPABASE_URL` en `VITE_SUPABASE_ANON_KEY` in. Die vind je onder
 - **Database en Storage:** RLS-policies staan per gebruiker op alle tabellen en op de Storage-bucket. `user_id` wordt door de database zelf gevuld (`default auth.uid()`).
 - **Voorbeelddata:** wordt met Supabase nooit automatisch geladen. Alleen als je database leeg is, krijg je de knop "Voorbeelddata laden" aangeboden.
 
-Code: [`src/auth/`](src/auth) (client, sessie, foutmeldingen) en [`src/pages/LoginPage.tsx`](src/pages/LoginPage.tsx).
+Code: [`src/auth/`](src/auth) (client, sessie, resetlinks, foutmeldingen), [`src/pages/LoginPage.tsx`](src/pages/LoginPage.tsx) en [`src/pages/ResetPasswordPage.tsx`](src/pages/ResetPasswordPage.tsx).
 
 ### 5. Bestaande localStorage-data overzetten (optioneel)
 

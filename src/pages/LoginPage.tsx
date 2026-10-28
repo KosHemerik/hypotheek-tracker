@@ -1,23 +1,39 @@
 import { useState, type FormEvent } from 'react'
-import { loginErrorMessage, validateLogin } from '@/auth/authErrors'
+import {
+  loginErrorMessage,
+  resetRequestErrorMessage,
+  validateLogin,
+  validateResetEmail,
+} from '@/auth/authErrors'
+import { AuthNotice, AuthShell, authCardClass, PasswordToggle } from '@/components/AuthShell'
 import { Button } from '@/components/ui/Button'
 import { Field, FormError, TextInput } from '@/components/ui/Field'
-import { HouseIcon } from '@/components/ui/icons'
 import { useAuth } from '@/hooks/useAuth'
 
+type Mode = 'login' | 'forgot' | 'sent'
+
+const linkClass =
+  'cursor-pointer text-sm font-medium text-slate-600 underline-offset-2 hover:text-slate-900 hover:underline'
+
 /**
- * Inloggen met e-mail en wachtwoord. Er is bewust geen registratie: het account wordt
- * eenmalig in het Supabase-dashboard aangemaakt (zie README).
+ * Inloggen met e-mail en wachtwoord, plus "wachtwoord vergeten". Er is bewust geen
+ * registratie: het account wordt eenmalig in het Supabase-dashboard aangemaakt (zie README).
  */
-export function LoginPage() {
-  const { signIn } = useAuth()
+export function LoginPage({ notice }: { notice?: string }) {
+  const { signIn, requestPasswordReset } = useAuth()
+  const [mode, setMode] = useState<Mode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({})
   const [busy, setBusy] = useState(false)
 
-  async function submit(e: FormEvent) {
+  function switchMode(next: Mode) {
+    setErrors({})
+    setMode(next)
+  }
+
+  async function submitLogin(e: FormEvent) {
     e.preventDefault()
     const fieldErrors = validateLogin(email, password)
     if (Object.keys(fieldErrors).length) return setErrors(fieldErrors)
@@ -33,72 +49,113 @@ export function LoginPage() {
     }
   }
 
-  return (
-    <div className="flex min-h-dvh items-center justify-center px-4 py-12">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <span className="flex size-11 items-center justify-center rounded-xl bg-slate-900 text-white">
-            <HouseIcon className="size-5" />
-          </span>
-          <h1 className="mt-4 text-xl font-semibold tracking-tight">Hypotheek Tracker</h1>
-          <p className="mt-1 text-sm text-slate-500">Log in om verder te gaan.</p>
-        </div>
+  async function submitForgot(e: FormEvent) {
+    e.preventDefault()
+    const fieldErrors = validateResetEmail(email)
+    if (Object.keys(fieldErrors).length) return setErrors(fieldErrors)
+    setErrors({})
+    setBusy(true)
+    try {
+      await requestPasswordReset(email)
+      setMode('sent')
+    } catch (error) {
+      setErrors({ form: resetRequestErrorMessage(error) })
+    } finally {
+      setBusy(false)
+    }
+  }
 
-        <form
-          onSubmit={submit}
-          noValidate
-          className="space-y-4 rounded-xl bg-white p-5 ring-1 ring-slate-200 sm:p-6"
-          aria-busy={busy}
-        >
+  const emailField = (
+    <Field label="E-mailadres" error={errors.email}>
+      {(p) => (
+        <TextInput
+          {...p}
+          type="email"
+          name="email"
+          autoComplete="username"
+          inputMode="email"
+          autoCapitalize="none"
+          spellCheck={false}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoFocus
+        />
+      )}
+    </Field>
+  )
+
+  if (mode === 'sent') {
+    return (
+      <AuthShell subtitle="Controleer je e-mail.">
+        <div className={authCardClass}>
+          <AuthNotice>
+            Als er een account bestaat voor <strong className="font-medium">{email.trim()}</strong>,
+            is er een mail met een resetlink verstuurd. De link werkt één keer en verloopt na een
+            uur.
+          </AuthNotice>
+          <p className="text-sm text-slate-500">
+            Geen mail ontvangen? Kijk in je spammap of vraag over een minuut een nieuwe link aan.
+          </p>
+          <Button variant="secondary" className="w-full" onClick={() => switchMode('login')}>
+            Terug naar inloggen
+          </Button>
+        </div>
+      </AuthShell>
+    )
+  }
+
+  if (mode === 'forgot') {
+    return (
+      <AuthShell subtitle="Vraag een link aan om een nieuw wachtwoord in te stellen.">
+        <form onSubmit={submitForgot} noValidate className={authCardClass} aria-busy={busy}>
           <FormError message={errors.form} />
-          <Field label="E-mailadres" error={errors.email}>
-            {(p) => (
+          {emailField}
+          <Button type="submit" variant="primary" className="w-full" disabled={busy}>
+            {busy ? 'Bezig met versturen…' : 'Resetlink versturen'}
+          </Button>
+          <div className="text-center">
+            <button type="button" className={linkClass} onClick={() => switchMode('login')}>
+              Terug naar inloggen
+            </button>
+          </div>
+        </form>
+      </AuthShell>
+    )
+  }
+
+  return (
+    <AuthShell
+      subtitle="Log in om verder te gaan."
+      footer="Privé-app. Nieuwe accounts kunnen niet worden aangemaakt."
+    >
+      <form onSubmit={submitLogin} noValidate className={authCardClass} aria-busy={busy}>
+        <FormError message={errors.form ?? notice} />
+        {emailField}
+        <Field label="Wachtwoord" error={errors.password}>
+          {(p) => (
+            <div className="relative">
               <TextInput
                 {...p}
-                type="email"
-                name="email"
-                autoComplete="username"
-                inputMode="email"
-                autoCapitalize="none"
-                spellCheck={false}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoFocus
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="pr-20"
               />
-            )}
-          </Field>
-          <Field label="Wachtwoord" error={errors.password}>
-            {(p) => (
-              <div className="relative">
-                <TextInput
-                  {...p}
-                  type={showPassword ? 'text' : 'password'}
-                  name="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pr-20"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-pressed={showPassword}
-                  className="absolute inset-y-0 right-0 cursor-pointer rounded-r-lg px-3 text-xs font-medium text-slate-500 hover:text-slate-900"
-                >
-                  {showPassword ? 'Verbergen' : 'Tonen'}
-                </button>
-              </div>
-            )}
-          </Field>
-          <Button type="submit" variant="primary" className="w-full" disabled={busy}>
-            {busy ? 'Bezig met inloggen…' : 'Inloggen'}
-          </Button>
-        </form>
-
-        <p className="mt-6 text-center text-xs text-slate-400">
-          Privé-app. Nieuwe accounts kunnen niet worden aangemaakt.
-        </p>
-      </div>
-    </div>
+              <PasswordToggle shown={showPassword} onToggle={() => setShowPassword((v) => !v)} />
+            </div>
+          )}
+        </Field>
+        <Button type="submit" variant="primary" className="w-full" disabled={busy}>
+          {busy ? 'Bezig met inloggen…' : 'Inloggen'}
+        </Button>
+        <div className="text-center">
+          <button type="button" className={linkClass} onClick={() => switchMode('forgot')}>
+            Wachtwoord vergeten?
+          </button>
+        </div>
+      </form>
+    </AuthShell>
   )
 }

@@ -9,6 +9,7 @@ import { BankCallbackPage } from './pages/BankCallbackPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { MortgageDetailPage } from './pages/MortgageDetailPage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
 
 const router = createBrowserRouter([
   {
@@ -42,7 +43,9 @@ function Gate() {
         </p>
       )
     case 'signed-out':
-      return <LoginPage />
+      return <LoginPage notice={state.notice} />
+    case 'recovery':
+      return <ResetPasswordPage email={state.user.email} />
     case 'local':
     case 'signed-in':
       return (
