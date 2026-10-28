@@ -17,10 +17,6 @@ export const CATEGORY_OPTIONS = DOCUMENT_CATEGORIES.map((value) => ({
   label: CATEGORY_LABELS[value],
 }))
 
-/** Gangbare bestandstypen voor de bestandskiezer (niet afgedwongen: andere bestanden mogen ook). */
-export const ACCEPTED_FILE_TYPES =
-  '.pdf,.png,.jpg,.jpeg,.heic,.webp,.gif,.doc,.docx,.xls,.xlsx,.csv,.txt,.eml,.msg'
-
 /** 1536 → "1,5 kB", 2_500_000 → "2,4 MB" */
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -54,11 +50,13 @@ export function fileKind(mimeType: string, fileName: string): FileKind {
   const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
   if (mimeType === 'application/pdf' || ext === 'pdf') return 'pdf'
   if (mimeType.startsWith('image/')) return 'image'
-  if (/sheet|excel|csv/.test(mimeType) || ['xls', 'xlsx', 'csv'].includes(ext)) return 'spreadsheet'
+  if (/sheet|excel|csv|numbers/.test(mimeType) || ['xls', 'xlsx', 'csv', 'numbers'].includes(ext)) {
+    return 'spreadsheet'
+  }
   if (
     mimeType.startsWith('text/') ||
     /word|document/.test(mimeType) ||
-    ['doc', 'docx', 'txt'].includes(ext)
+    ['doc', 'docx', 'txt', 'pages'].includes(ext)
   ) {
     return 'text'
   }
@@ -85,7 +83,9 @@ export function validateFiles(files: readonly FileLike[]): string[] {
     errors.push(`Upload maximaal ${MAX_FILES_PER_UPLOAD} bestanden tegelijk.`)
   }
   for (const file of files) {
-    if (file.size === 0) errors.push(`"${file.name}" is leeg.`)
+    if (file.size === 0 && isApplePackageName(file.name))
+      errors.push(applePackageMessage(file.name))
+    else if (file.size === 0) errors.push(`"${file.name}" is leeg.`)
     else if (file.size > MAX_FILE_SIZE_BYTES) {
       errors.push(
         `"${file.name}" is te groot (${formatFileSize(file.size)}); maximaal ${formatFileSize(MAX_FILE_SIZE_BYTES)}.`,
@@ -108,4 +108,24 @@ export function validateFileName(name: string, original: string): string | null 
 function extension(name: string): string {
   const i = name.lastIndexOf('.')
   return i > 0 ? name.slice(i + 1).toLowerCase() : ''
+}
+
+/** Apple iWork-bestanden (Numbers, Pages, Keynote). */
+const APPLE_IWORK_EXTENSIONS = ['numbers', 'pages', 'key']
+
+export function isApplePackageName(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  return APPLE_IWORK_EXTENSIONS.includes(ext)
+}
+
+/**
+ * iWork-bestanden kunnen als "pakket" bewaard zijn: dat is eigenlijk een map, en een
+ * browser kan een map niet als één bestand uploaden (hij komt leeg of helemaal niet door).
+ */
+export function applePackageMessage(name: string): string {
+  return (
+    `"${name}" is als pakket (map) bewaard en kan zo niet worden geüpload. ` +
+    'Zet het in Numbers/Pages/Keynote om naar één bestand via Archief → Geavanceerd → ' +
+    'Wijzig bestandstype → Eén bestand, of exporteer het naar Excel of PDF.'
+  )
 }

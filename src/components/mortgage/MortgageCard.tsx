@@ -1,8 +1,9 @@
 import { Link } from 'react-router'
 import type { Mortgage } from '@/domain/types'
 import type { MortgageSummary } from '@/lib/calculations'
-import { formatCurrency, formatDate, formatRate, formatShare } from '@/lib/format'
+import { formatCurrency, formatDate, formatShare } from '@/lib/format'
 import { Card, ProgressBar } from '../ui/Card'
+import { rateLabel } from './rateLabel'
 import { ChevronRightIcon } from '../ui/icons'
 
 interface MortgageCardProps {
@@ -22,6 +23,8 @@ export function MortgageCard({
   search,
   today,
 }: MortgageCardProps) {
+  const rate = rateLabel(summary)
+  const partCount = mortgage.parts.length
   return (
     <Card className="group relative transition-shadow hover:shadow-md hover:ring-slate-300">
       <div className="p-4 sm:p-5">
@@ -37,6 +40,7 @@ export function MortgageCard({
             </h3>
             <p className="truncate text-sm text-slate-500">
               {mortgage.mortgageNumber}
+              {partCount > 1 && ` · ${partCount} leningdelen`}
               {isSample && (
                 <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">
                   voorbeeld
@@ -68,7 +72,10 @@ export function MortgageCard({
           <div>
             <dt className="text-xs text-slate-500">Rente nu</dt>
             <dd className="font-medium">
-              {summary.currentRate ? formatRate(summary.currentRate.rateMilliPct) : '—'}
+              {rate.value}
+              {rate.range && (
+                <span className="block text-xs font-normal text-slate-500">{rate.range}</span>
+              )}
             </dd>
           </div>
           <div>

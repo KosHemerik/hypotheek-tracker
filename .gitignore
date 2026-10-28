@@ -26,3 +26,14 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Supabase CLI
+supabase/.temp
+supabase/.branches
+
+# Lokale back-ups van de database (persoonlijke gegevens)
+backups/
+
+# Geheime sleutels (bijv. Enable Banking .pem)
+secrets/
+*.pem

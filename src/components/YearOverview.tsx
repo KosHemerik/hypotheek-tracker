@@ -1,11 +1,12 @@
-import type { YearSummary } from '@/lib/calculations'
+import { interestStatus, type YearSummary } from '@/lib/calculations'
 import { formatCurrency } from '@/lib/format'
+import { InterestDiff } from './payments/InterestDiff'
 
 /** Jaaroverzicht per kalenderjaar (handig voor de belastingaangifte: betaalde rente + saldo 1-1 / 31-12). */
 export function YearOverview({ rows, currentYear }: { rows: YearSummary[]; currentYear: number }) {
   return (
     <div className="-mx-4 overflow-x-auto sm:-mx-5">
-      <table className="tabular w-full min-w-[36rem] text-sm">
+      <table className="tabular w-full min-w-200 text-sm">
         <thead className="border-b border-slate-200 text-xs text-slate-500">
           <tr>
             <th scope="col" className="py-2 pr-3 pl-4 text-left font-medium sm:pl-5">
@@ -13,6 +14,12 @@ export function YearOverview({ rows, currentYear }: { rows: YearSummary[]; curre
             </th>
             <th scope="col" className="px-3 py-2 text-right font-medium">
               Betaalde rente
+            </th>
+            <th scope="col" className="px-3 py-2 text-right font-medium">
+              Verschuldigd
+            </th>
+            <th scope="col" className="px-3 py-2 text-left font-medium">
+              Verschil
             </th>
             <th scope="col" className="px-3 py-2 text-right font-medium">
               Afgelost
@@ -35,6 +42,19 @@ export function YearOverview({ rows, currentYear }: { rows: YearSummary[]; curre
                 )}
               </td>
               <td className="px-3 py-2.5 text-right">{formatCurrency(r.interestCents)}</td>
+              <td className="px-3 py-2.5 text-right text-slate-600">
+                {formatCurrency(r.dueInterestCents)}
+              </td>
+              <td className="px-3 py-2.5">
+                {r.interestCents > 0 || r.dueInterestCents > 0 ? (
+                  <InterestDiff
+                    differenceCents={r.interestCents - r.dueInterestCents}
+                    status={interestStatus(r.interestCents - r.dueInterestCents)}
+                  />
+                ) : (
+                  <span className="text-slate-300">—</span>
+                )}
+              </td>
               <td className="px-3 py-2.5 text-right">{formatCurrency(r.principalCents)}</td>
               <td className="px-3 py-2.5 text-right text-slate-600">
                 {formatCurrency(r.openingBalanceCents)}

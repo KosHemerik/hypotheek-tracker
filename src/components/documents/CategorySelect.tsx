@@ -1,5 +1,6 @@
 import type { DocumentCategory } from '@/domain/types'
 import { CATEGORY_OPTIONS } from '@/lib/documents'
+import { SelectInput } from '../ui/Field'
 
 interface CategorySelectProps {
   id?: string
@@ -10,17 +11,18 @@ interface CategorySelectProps {
 
 export function CategorySelect({ id, value, onChange, className = '' }: CategorySelectProps) {
   return (
-    <select
+    <SelectInput
       id={id}
+      size="sm"
+      className={className}
       value={value}
       onChange={(e) => onChange(e.target.value as DocumentCategory)}
-      className={`h-9 cursor-pointer rounded-lg border-0 bg-white px-3 pr-8 text-sm text-slate-900 ring-1 ring-slate-300 ring-inset focus:ring-2 focus:ring-slate-900 ${className}`}
     >
       {CATEGORY_OPTIONS.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}
         </option>
       ))}
-    </select>
+    </SelectInput>
   )
 }

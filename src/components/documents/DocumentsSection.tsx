@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, type DragEvent } from 'react'
 import type { Mortgage, MortgageDocument } from '@/domain/types'
 import { useData } from '@/hooks/useData'
 import {
-  ACCEPTED_FILE_TYPES,
+  applePackageMessage,
   CATEGORY_LABELS,
   formatFileSize,
+  isApplePackageName,
   isPreviewable,
   MAX_FILE_SIZE_BYTES,
 } from '@/lib/documents'
@@ -57,7 +58,7 @@ export function DocumentsSection({
 
   const sorted = [...documents].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
-  const startUpload = (files: FileList | null) => {
+  const startUpload = (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return
     setMessage(null)
     setDialog({ kind: 'upload', files: [...files] })
@@ -85,7 +86,24 @@ export function DocumentsSection({
       e.preventDefault()
       dragDepth.current = 0
       setDragging(false)
-      startUpload(e.dataTransfer.files)
+      // Mappen (ook iWork-"pakketten") kan een browser niet als bestand uploaden.
+      const folders = [...e.dataTransfer.items]
+        .map((item) => item.webkitGetAsEntry?.())
+        .filter((entry) => entry?.isDirectory)
+        .map((entry) => entry!.name)
+      const files = [...e.dataTransfer.files].filter((f) => !folders.includes(f.name))
+      if (files.length > 0) startUpload(files)
+      if (folders.length > 0) {
+        setMessage(
+          folders
+            .map((name) =>
+              isApplePackageName(name)
+                ? applePackageMessage(name)
+                : `"${name}" is een map; kies de bestanden zelf.`,
+            )
+            .join(' '),
+        )
+      }
     },
   }
 
@@ -124,7 +142,6 @@ export function DocumentsSection({
           ref={inputRef}
           type="file"
           multiple
-          accept={ACCEPTED_FILE_TYPES}
           className="sr-only"
           tabIndex={-1}
           aria-hidden="true"
@@ -215,8 +232,8 @@ export function DocumentsSection({
             {sorted.length === 0 ? 'Nog geen documenten' : 'Meer documenten toevoegen'}
           </span>
           <span className="mt-1 max-w-sm text-sm text-slate-500">
-            Sleep bestanden hierheen of klik om te kiezen. PDF, afbeeldingen of Office-bestanden,
-            max. {formatFileSize(MAX_FILE_SIZE_BYTES)} per bestand.
+            Sleep bestanden hierheen of klik om te kiezen. Alle bestandstypen (PDF, afbeeldingen,
+            Excel, Numbers, …), max. {formatFileSize(MAX_FILE_SIZE_BYTES)} per bestand.
           </span>
         </button>
       </Section>

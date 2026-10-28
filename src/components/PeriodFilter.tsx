@@ -1,3 +1,4 @@
+import { SelectInput } from './ui/Field'
 import { RELATIVE_PERIODS, type PeriodKey } from '@/lib/period'
 
 interface PeriodFilterProps {
@@ -30,15 +31,13 @@ export function PeriodFilter({ value, onChange, years }: PeriodFilterProps) {
       <label className="sr-only" htmlFor="period-year">
         Kalenderjaar
       </label>
-      <select
+      <SelectInput
         id="period-year"
+        size="sm"
+        active={isYear}
+        className="w-40"
         value={isYear ? value : ''}
         onChange={(e) => e.target.value && onChange(e.target.value as PeriodKey)}
-        className={`h-9 cursor-pointer rounded-lg border-0 px-3 pr-8 text-sm font-medium ring-1 ring-inset focus:ring-2 focus:ring-slate-900 ${
-          isYear
-            ? 'bg-white text-slate-900 ring-slate-900'
-            : 'bg-white text-slate-600 ring-slate-300'
-        }`}
       >
         <option value="">Kalenderjaar…</option>
         {years.map((y) => (
@@ -46,7 +45,7 @@ export function PeriodFilter({ value, onChange, years }: PeriodFilterProps) {
             {y}
           </option>
         ))}
-      </select>
+      </SelectInput>
     </div>
   )
 }

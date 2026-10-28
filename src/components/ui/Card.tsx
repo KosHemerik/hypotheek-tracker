@@ -41,7 +41,7 @@ export function StatCard({
   emphasis?: boolean
 }) {
   return (
-    <Card className="px-4 py-3.5">
+    <Card className="h-full px-4 py-3.5">
       <p className="text-sm text-slate-500">{label}</p>
       <p
         className={`tabular mt-1 font-semibold tracking-tight text-slate-900 ${emphasis ? 'text-2xl' : 'text-xl'}`}

@@ -78,3 +78,22 @@ describe('validateFileName', () => {
     expect(validateFileName('notities', 'notities')).toBeNull()
   })
 })
+
+describe('Apple iWork-bestanden', () => {
+  it('herkent Numbers en Pages als spreadsheet en tekst', () => {
+    expect(fileKind('', 'Aflosschema.numbers')).toBe('spreadsheet')
+    expect(fileKind('application/vnd.apple.numbers', 'x.numbers')).toBe('spreadsheet')
+    expect(fileKind('', 'Brief.pages')).toBe('text')
+  })
+
+  it('accepteert een gewoon .numbers-bestand', () => {
+    expect(validateFiles([{ name: 'Aflosschema.numbers', size: 250_000 }])).toEqual([])
+  })
+
+  it('legt uit wat er aan de hand is bij een leeg iWork-pakket', () => {
+    const [error] = validateFiles([{ name: 'Aflosschema.numbers', size: 0 }])
+    expect(error).toMatch(/als pakket \(map\) bewaard/)
+    expect(error).toMatch(/Eén bestand/)
+    expect(validateFiles([{ name: 'leeg.pdf', size: 0 }])[0]).toBe('"leeg.pdf" is leeg.')
+  })
+})

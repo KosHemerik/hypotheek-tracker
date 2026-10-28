@@ -1,29 +1,46 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type {
+  BankConnectionRow,
+  BankTransactionRow,
+  EntityRow,
   InterestRatePeriodRow,
+  LoanPartRow,
   MortgageDocumentRow,
-  MortgageRow,
-  PaymentRow,
+  MortgageWithPartsRow,
+  PaymentWithLinesRow,
 } from '@/domain/db-types'
 import {
+  BANK_CONNECTION_COLUMNS,
+  bankConnectionFromRow,
+  bankTransactionFromRow,
   documentFromRow,
   documentMetaToUpdate,
+  entityFromRow,
+  loanPartFromRow,
+  milliToRatePercentage,
   mortgageFromRow,
   mortgageToInsert,
   paymentFromRow,
-  paymentToInsert,
+  paymentLinesToJson,
   rateFromRow,
   rateToInsert,
 } from '@/domain/mappers'
 import type {
+  BankLinkResult,
+  BankPsuType,
   DocumentMetaInput,
   DocumentUploadInput,
   InterestRatePeriodInput,
+  LoanPartInput,
   MortgageInput,
+  NewLoanPartInput,
   NewMortgageInput,
   PaymentInput,
   UUID,
 } from '@/domain/types'
+
+const MORTGAGE_SELECT = '*, loan_parts(*)'
+const PAYMENT_SELECT = '*, payment_lines(*)'
 import { RepositoryError, type MortgageRepository } from './MortgageRepository'
 
 /** Private bucket; zie `supabase/migrations/…_documents.sql`. */
@@ -40,53 +57,97 @@ export const DOCUMENTS_BUCKET = 'mortgage-documents'
 export class SupabaseMortgageRepository implements MortgageRepository {
   constructor(private readonly db: SupabaseClient) {}
 
-  async listMortgages() {
+  async listEntities() {
     const { data, error } = await this.db
-      .from('mortgages')
+      .from('entities')
       .select('*')
       .order('created_at', { ascending: true })
-    check(error, 'Hypotheken laden mislukt')
-    return (data as MortgageRow[]).map(mortgageFromRow)
+    check(error, 'Entiteiten laden mislukt')
+    return (data as EntityRow[]).map(entityFromRow)
   }
 
-  async getMortgage(id: UUID) {
-    const { data, error } = await this.db.from('mortgages').select('*').eq('id', id).maybeSingle()
-    check(error, 'Hypotheek laden mislukt')
-    return data ? mortgageFromRow(data as MortgageRow) : null
-  }
-
-  async createMortgage(input: NewMortgageInput) {
-    const { initialRateMilliPct, ...mortgageInput } = input
+  async createEntity(name: string) {
     const { data, error } = await this.db
-      .from('mortgages')
-      .insert(mortgageToInsert(mortgageInput))
+      .from('entities')
+      .insert({ name: name.trim() })
       .select()
       .single()
-    check(error, 'Hypotheek opslaan mislukt')
-    const mortgage = mortgageFromRow(data as MortgageRow)
-    try {
-      await this.createRate({
-        mortgageId: mortgage.id,
-        rateMilliPct: initialRateMilliPct,
-        effectiveDate: mortgage.startDate,
-      })
-    } catch (rateError) {
-      // Geen half aangemaakte hypotheek achterlaten.
-      await this.db.from('mortgages').delete().eq('id', mortgage.id)
-      throw rateError
-    }
-    return mortgage
+    check(error, 'Entiteit opslaan mislukt', { '23505': ENTITY_EXISTS })
+    return entityFromRow(data as EntityRow)
   }
 
-  async updateMortgage(id: UUID, input: MortgageInput) {
+  async renameEntity(id: UUID, name: string) {
     const { data, error } = await this.db
-      .from('mortgages')
-      .update(mortgageToInsert(input))
+      .from('entities')
+      .update({ name: name.trim() })
       .eq('id', id)
       .select()
       .single()
+    check(error, 'Entiteit hernoemen mislukt', { '23505': ENTITY_EXISTS })
+    return entityFromRow(data as EntityRow)
+  }
+
+  async deleteEntity(id: UUID) {
+    const { error } = await this.db.from('entities').delete().eq('id', id)
+    check(error, 'Entiteit verwijderen mislukt', {
+      '23503': 'Deze entiteit heeft nog hypotheken. Verplaats of verwijder die eerst.',
+    })
+  }
+
+  async listMortgages() {
+    const { data, error } = await this.db
+      .from('mortgages')
+      .select(MORTGAGE_SELECT)
+      .order('created_at', { ascending: true })
+    check(error, 'Hypotheken laden mislukt')
+    return (data as MortgageWithPartsRow[]).map(mortgageFromRow)
+  }
+
+  async getMortgage(id: UUID) {
+    const { data, error } = await this.db
+      .from('mortgages')
+      .select(MORTGAGE_SELECT)
+      .eq('id', id)
+      .maybeSingle()
+    check(error, 'Hypotheek laden mislukt')
+    return data ? mortgageFromRow(data as MortgageWithPartsRow) : null
+  }
+
+  private async requireMortgage(id: UUID) {
+    const mortgage = await this.getMortgage(id)
+    if (!mortgage) throw new RepositoryError('Hypotheek niet gevonden.')
+    return mortgage
+  }
+
+  async createMortgage(input: NewMortgageInput) {
+    const { parts, ...mortgageInput } = input
+    // Eén transactie in de database: hypotheek, delen en startrentes (zie migratie).
+    const { data, error } = await this.db.rpc('create_mortgage', {
+      p_mortgage: mortgageToInsert(mortgageInput),
+      p_parts: parts.map((p) => ({
+        name: p.name,
+        principal_cents: p.principalCents,
+        agreed_repayment_cents: p.agreedRepaymentCents,
+        rate_percentage: milliToRatePercentage(p.initialRateMilliPct),
+      })),
+    })
+    check(error, 'Hypotheek opslaan mislukt', { '23505': PART_EXISTS })
+    return this.requireMortgage(data as string)
+  }
+
+  async updateMortgage(id: UUID, input: MortgageInput) {
+    const { error } = await this.db.from('mortgages').update(mortgageToInsert(input)).eq('id', id)
     check(error, 'Hypotheek bijwerken mislukt')
-    return mortgageFromRow(data as MortgageRow)
+    return this.requireMortgage(id)
+  }
+
+  async setMortgageArchived(id: UUID, archived: boolean) {
+    const { error } = await this.db
+      .from('mortgages')
+      .update({ archived_at: archived ? new Date().toISOString() : null })
+      .eq('id', id)
+    check(error, archived ? 'Archiveren mislukt' : 'Dearchiveren mislukt')
+    return this.requireMortgage(id)
   }
 
   async deleteMortgage(id: UUID) {
@@ -98,9 +159,58 @@ export class SupabaseMortgageRepository implements MortgageRepository {
         .remove(docs.map((d) => d.storagePath))
       check(storageError, 'Documenten verwijderen mislukt')
     }
-    // Rentewijzigingen, betalingen en documentmetadata verdwijnen via `on delete cascade`.
+    // Leningdelen, rente, betalingen en documentmetadata verdwijnen via `on delete cascade`.
     const { error } = await this.db.from('mortgages').delete().eq('id', id)
     check(error, 'Hypotheek verwijderen mislukt')
+  }
+
+  async createLoanPart(input: NewLoanPartInput) {
+    const { data, error } = await this.db.rpc('create_loan_part', {
+      p_mortgage_id: input.mortgageId,
+      p_part: {
+        name: input.name,
+        principal_cents: input.principalCents,
+        agreed_repayment_cents: input.agreedRepaymentCents,
+        rate_percentage: milliToRatePercentage(input.initialRateMilliPct),
+      },
+    })
+    check(error, 'Leningdeel opslaan mislukt', { '23505': PART_EXISTS })
+    return this.getLoanPart(data as string)
+  }
+
+  async updateLoanPart(id: UUID, input: LoanPartInput) {
+    const { data, error } = await this.db
+      .from('loan_parts')
+      .update({
+        name: input.name,
+        principal_cents: input.principalCents,
+        agreed_repayment_cents: input.agreedRepaymentCents,
+      })
+      .eq('id', id)
+      .select()
+      .single()
+    check(error, 'Leningdeel bijwerken mislukt', { '23505': PART_EXISTS })
+    return loanPartFromRow(data as LoanPartRow)
+  }
+
+  async deleteLoanPart(id: UUID) {
+    const part = await this.getLoanPart(id)
+    const { count, error: countError } = await this.db
+      .from('loan_parts')
+      .select('id', { count: 'exact', head: true })
+      .eq('mortgage_id', part.mortgageId)
+    check(countError, 'Leningdeel verwijderen mislukt')
+    if ((count ?? 0) <= 1) throw new RepositoryError('Een hypotheek heeft minimaal één leningdeel.')
+    const { error } = await this.db.from('loan_parts').delete().eq('id', id)
+    check(error, 'Leningdeel verwijderen mislukt', {
+      '23503': 'Er zijn al betalingen op dit leningdeel. Verwijder of wijzig die eerst.',
+    })
+  }
+
+  private async getLoanPart(id: UUID) {
+    const { data, error } = await this.db.from('loan_parts').select('*').eq('id', id).single()
+    check(error, 'Leningdeel niet gevonden')
+    return loanPartFromRow(data as LoanPartRow)
   }
 
   async listRates(mortgageId?: UUID) {
@@ -117,7 +227,7 @@ export class SupabaseMortgageRepository implements MortgageRepository {
       .insert(rateToInsert(input))
       .select()
       .single()
-    check(error, 'Rentepercentage opslaan mislukt')
+    check(error, 'Rentepercentage opslaan mislukt', { '23505': RATE_EXISTS })
     return rateFromRow(data as InterestRatePeriodRow)
   }
 
@@ -128,7 +238,7 @@ export class SupabaseMortgageRepository implements MortgageRepository {
       .eq('id', id)
       .select()
       .single()
-    check(error, 'Rentepercentage bijwerken mislukt')
+    check(error, 'Rentepercentage bijwerken mislukt', { '23505': RATE_EXISTS })
     return rateFromRow(data as InterestRatePeriodRow)
   }
 
@@ -138,32 +248,38 @@ export class SupabaseMortgageRepository implements MortgageRepository {
   }
 
   async listPayments(mortgageId?: UUID) {
-    let query = this.db.from('payments').select('*')
+    let query = this.db.from('payments').select(PAYMENT_SELECT)
     if (mortgageId) query = query.eq('mortgage_id', mortgageId)
     const { data, error } = await query.order('payment_date', { ascending: true })
     check(error, 'Betalingen laden mislukt')
-    return (data as PaymentRow[]).map(paymentFromRow)
+    return (data as PaymentWithLinesRow[]).map(paymentFromRow)
+  }
+
+  /** Betaling + regels in één transactie (database-functie `save_payment`). */
+  private async savePayment(id: UUID | null, input: PaymentInput) {
+    const { data, error } = await this.db.rpc('save_payment', {
+      p_id: id,
+      p_mortgage_id: input.mortgageId,
+      p_date: input.date,
+      p_description: input.description,
+      p_lines: paymentLinesToJson(input.lines),
+    })
+    check(error, 'Betaling opslaan mislukt')
+    const { data: row, error: readError } = await this.db
+      .from('payments')
+      .select(PAYMENT_SELECT)
+      .eq('id', data as string)
+      .single()
+    check(readError, 'Betaling laden mislukt')
+    return paymentFromRow(row as PaymentWithLinesRow)
   }
 
   async createPayment(input: PaymentInput) {
-    const { data, error } = await this.db
-      .from('payments')
-      .insert(paymentToInsert(input))
-      .select()
-      .single()
-    check(error, 'Betaling opslaan mislukt')
-    return paymentFromRow(data as PaymentRow)
+    return this.savePayment(null, input)
   }
 
   async updatePayment(id: UUID, input: PaymentInput) {
-    const { data, error } = await this.db
-      .from('payments')
-      .update(paymentToInsert(input))
-      .eq('id', id)
-      .select()
-      .single()
-    check(error, 'Betaling bijwerken mislukt')
-    return paymentFromRow(data as PaymentRow)
+    return this.savePayment(id, input)
   }
 
   async deletePayment(id: UUID) {
@@ -252,6 +368,88 @@ export class SupabaseMortgageRepository implements MortgageRepository {
     check(error, 'Document niet gevonden')
     return data as MortgageDocumentRow
   }
+
+  // -- Bankkoppeling ---------------------------------------------------------------
+
+  async listBankConnections() {
+    const { data, error } = await this.db.from('bank_connections').select(BANK_CONNECTION_COLUMNS)
+    check(error, 'Bankkoppelingen laden mislukt')
+    return (data as unknown as BankConnectionRow[]).map(bankConnectionFromRow)
+  }
+
+  async listBankTransactions() {
+    // PostgREST geeft maximaal 1000 rijen per verzoek: in pagina's ophalen.
+    const pageSize = 1000
+    const rows: BankTransactionRow[] = []
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await this.db
+        .from('bank_transactions')
+        .select(
+          'id, entity_id, connection_id, booking_date, amount_cents, currency, counterparty_name, counterparty_iban, description, payment_id, ignored',
+        )
+        .order('booking_date', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, from + pageSize - 1)
+      check(error, 'Banktransacties laden mislukt')
+      rows.push(...(data as BankTransactionRow[]))
+      if (!data || data.length < pageSize) break
+    }
+    return rows.map(bankTransactionFromRow)
+  }
+
+  async updateBankTransaction(id: UUID, input: { paymentId?: UUID | null; ignored?: boolean }) {
+    const values: Record<string, unknown> = {}
+    if (input.paymentId !== undefined) values.payment_id = input.paymentId
+    if (input.ignored !== undefined) values.ignored = input.ignored
+    const { error } = await this.db.from('bank_transactions').update(values).eq('id', id)
+    check(error, 'Banktransactie bijwerken mislukt')
+  }
+
+  /** Roept de Edge Function `bank` aan met de sessie van de ingelogde gebruiker. */
+  private async bank<T>(body: Record<string, unknown>): Promise<T> {
+    const { data, error } = await this.db.functions.invoke('bank', { body })
+    if (error) {
+      // Bij een HTTP-fout staat de leesbare melding in de body van de functie.
+      let message = 'De bankkoppeling gaf een fout.'
+      const context = (error as { context?: Response }).context
+      if (context && typeof context.json === 'function') {
+        const payload = (await context.json().catch(() => null)) as { error?: string } | null
+        if (payload?.error) message = payload.error
+      }
+      throw new RepositoryError(message, error)
+    }
+    return data as T
+  }
+
+  async listBanks(psuType: BankPsuType) {
+    const result = await this.bank<{ banks: string[] }>({ action: 'banks', psuType })
+    return result.banks
+  }
+
+  startBankLink(input: {
+    entityId: UUID
+    psuType: BankPsuType
+    bank: string
+    redirectUrl: string
+  }) {
+    return this.bank<{ url: string }>({ action: 'start', ...input })
+  }
+
+  completeBankLink(input: { code: string; state: string }) {
+    return this.bank<BankLinkResult>({ action: 'complete', ...input })
+  }
+
+  selectBankAccount(connectionId: UUID, accountUid: string) {
+    return this.bank<BankLinkResult>({ action: 'select', connectionId, accountUid })
+  }
+
+  syncBank(entityId: UUID) {
+    return this.bank<{ added: number; fetched: number }>({ action: 'sync', entityId })
+  }
+
+  async disconnectBank(entityId: UUID) {
+    await this.bank({ action: 'disconnect', entityId })
+  }
 }
 
 /** Storage-sleutels mogen geen willekeurige tekens bevatten; de echte naam staat in `file_name`. */
@@ -264,6 +462,20 @@ function storageSafeName(name: string): string {
   return safe.slice(-100) || 'bestand'
 }
 
-function check(error: { message: string } | null, message: string): void {
-  if (error) throw new RepositoryError(`${message}: ${error.message}`, error)
+const ENTITY_EXISTS = 'Er bestaat al een entiteit met deze naam.'
+const PART_EXISTS = 'Er is al een leningdeel met deze naam bij deze hypotheek.'
+const RATE_EXISTS = 'Er is al een rentepercentage met deze ingangsdatum.'
+
+/**
+ * Gooit een RepositoryError bij een fout. Bekende Postgres-codes (23505 = uniek,
+ * 23503 = foreign key) krijgen per aanroep een begrijpelijke melding.
+ */
+function check(
+  error: { message: string; code?: string } | null,
+  message: string,
+  known: Partial<Record<'23505' | '23503', string>> = {},
+): void {
+  if (!error) return
+  const friendly = error.code ? known[error.code as '23505' | '23503'] : undefined
+  throw new RepositoryError(friendly ?? `${message}: ${error.message}`, error)
 }
